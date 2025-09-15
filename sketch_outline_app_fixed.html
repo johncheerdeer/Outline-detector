@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Outline Tracer</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; margin: 20px; }
+    canvas { border: 1px solid black; cursor: crosshair; display: block; margin: 10px auto; }
+    .controls { margin-top: 10px; }
+    button { margin: 0 5px; padding: 5px 10px; }
+  </style>
+</head>
+<body>
+  <h1>Outline Tracer</h1>
+  <input type="file" id="upload" accept="image/*">
+
+  <div class="controls">
+    <button id="penBtn">Pen</button>
+    <button id="eraserBtn">Eraser</button>
+    <button id="clearBtn">Clear</button>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+  <script>
+    const upload = document.getElementById('upload');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    let img = new Image();
+    let tool = 'pen';
+
+    // Tool controls
+    document.getElementById('penBtn').onclick = () => tool = 'pen';
+    document.getElementById('eraserBtn').onclick = () => tool = 'eraser';
+    document.getElementById('clearBtn').onclick = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (img.src) {
+        ctx.drawImage(img, 0, 0);
+        detectEdges();
+      }
+    };
+
+    upload.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        img.onload = () => {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+          detectEdges();
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    function detectEdges() {
+      let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      let data = imageData.data;
+      let gray = new Uint8ClampedArray(canvas.width * canvas.height);
+
+      for (let i = 0; i < data.length; i += 4) {
+        let avg = (data[i] + data[i+1] + data[i+2]) / 3;
+        gray[i/4] = avg;
+      }
+
+      let sobelData = new Uint8ClampedArray(canvas.width * canvas.height);
+      let w = canvas.width;
+      let h = canvas.height;
+      let kernelX = [[-1,0,1],[-2,0,2],[-1,0,1]];
+      let kernelY = [[-1,-2,-1],[0,0,0],[1,2,1]];
+
+      for (let y = 1; y < h-1; y++) {
+        for (let x = 1; x < w-1; x++) {
+          let px = 0, py = 0;
+          for (let ky = -1; ky <= 1; ky++) {
+            for (let kx = -1; kx <= 1; kx++) {
+              let val = gray[(y+ky)*w + (x+kx)];
+              px += kernelX[ky+1][kx+1]*val;
+              py += kernelY[ky+1][kx+1]*val;
+            }
+          }
+          sobelData[y*w+x] = Math.sqrt(px*px + py*py);
+        }
+      }
+
+      for (let i = 0; i < data.length; i += 4) {
+        let v = sobelData[i/4];
+        data[i] = data[i+1] = data[i+2] = v;
+        data[i+3] = 255;
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+    }
+
+    // Drawing overlay
+    let drawing = false;
+    canvas.addEventListener('mousedown', () => drawing = true);
+    canvas.addEventListener('mouseup', () => drawing = false);
+    canvas.addEventListener('mouseleave', () => drawing = false);
+    canvas.addEventListener('mousemove', (e) => {
+      if (!drawing) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      if (tool === 'pen') {
+        ctx.fillStyle = 'red';
+        ctx.beginPath();
+        ctx.arc(x, y, 2, 0, 2 * Math.PI);
+        ctx.fill();
+      } else if (tool === 'eraser') {
+        ctx.clearRect(x-5, y-5, 10, 10);
+      }
+    });
+  </script>
+</body>
+</html>
